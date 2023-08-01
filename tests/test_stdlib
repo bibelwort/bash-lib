@@ -1,0 +1,388 @@
+#!/bin/bash
+# shellcheck disable=SC2317
+
+# Load stdlib.sh
+source "$( readlink -e "$( dirname "${BASH_SOURCE[0]}" )" )/../stdlib.sh" || return 1
+
+declare -i TEST_STATUS=${SUCCESS}
+
+set -o errtrace
+trap trap_exit EXIT
+
+function trap_exit() {
+    if [[ "${FUNCNAME[2]:-}" == "test_exit_if_error" ]]; then
+        exit "${TEST_STATUS}"
+    fi    
+}
+
+
+function _run_test() {
+    declare -ri correct_result="${1:-}"; shift
+    declare -r type="${1:-}"; shift
+    if [[ "${type}" == '-v' ]]; then
+        if [[ -v "${1:-}" ]]; then
+            declare -r test_variable="$1"
+            shift
+        else
+            printf '%-9s%s%s\n' "FATAL" "${FUNCNAME[0]:-}:  " "WRONG INPUT" 1>&2
+            return ${FAILURE}
+        fi
+    fi
+    declare -i  actual_result=""
+    declare -i  status=${FAILURE}
+
+    [[
+        ! ( "${type}" == '-o' || "${type}" == '-e' || "${type}" == '-v' ) ||
+        -z "${correct_result}" ||
+        -z "$*"
+    ]] && {
+        printf '%-9s%s%s\n' "FATAL" "${FUNCNAME[0]:-}:  " "WRONG INPUT" 1>&2
+        return ${FAILURE}
+    }
+
+    if [[ "${type}" == '-e' ]]; then
+        "$@" && actual_result="${SUCCESS}" || actual_result="${FAILURE}"
+    elif [[ "${type}" == '-v' ]]; then
+        "$@"
+        actual_result="${!test_variable}"
+    else
+        actual_result="$( "$@" || true )"
+    fi
+
+    #echo "${correct_result}" 1>&2
+    if [[ "${actual_result}" == "${correct_result}" ]]; then
+        printf '%-9s' "PASS:"
+        status=${SUCCESS}
+    else
+        printf '%-9s' "FAIL:"
+        status=${FAILURE}
+    fi
+    
+    printf '%s\n' "$( echo "$*" | tr '\n' ' ' )"
+
+    return ${status}
+}
+
+
+function _run_tests() {    
+    [[ -z "${1:-}" || -z "${2:-}" ]] && {
+        printf '%-9s%s%s\n' "FATAL" "${FUNCNAME[0]:-}:  " "WRONG INPUT" 1>&2
+        return ${FAILURE}
+    }
+
+    declare -r   command="$1"; shift
+    declare -n  _test_cases="$1"; shift
+    
+    declare     expected_result=""
+    declare -a  args=()
+
+    declare -i  total_tests=0
+    declare -i  failures=0
+
+    declare     test_log
+    test_log="$( mktemp )"
+
+    for test_case in "${!_test_cases[@]}"; do
+        total_tests+=1
+        expected_result="${_test_cases["${test_case}"]}"
+        
+        if [[ "${test_case}" == '_EMPTY' ]]; then
+            _run_test "${expected_result}" "$@" "${command}" || failures+=1
+            continue
+        fi
+
+        mapfile -t args < <( echo "${test_case}" | sed -E 's/\"[ ]*,[ ]+\"/\n/g; s/^[ ]*\"//; s/\"[ ]*$//' )
+        _run_test "${expected_result}" "$@" "${command}" "${args[@]}" || failures+=1
+    done > "${test_log}"
+
+
+    echo -e "\n# TESTING '${command}':"
+    printf '%-9s%s\n'    "PASSED:"  "$(( total_tests - failures ))"
+    printf '%-9s%s\n'    "FAILED:"  "${failures}"
+
+    if (( failures != 0 )); then
+        sort -k1,1dr -k3,3d "${test_log}" | grep 'FAIL'
+        rm -f "${test_log}"
+        return ${FAILURE}
+    else
+        rm -f "${test_log}"
+    fi
+
+    return ${SUCCESS}
+}
+
+
+function test_isBool () {
+    # shellcheck disable=SC2034
+    declare -A test_cases=(
+        ['0']=${SUCCESS}
+        ['1']=${SUCCESS}
+        ['tRuE']=${SUCCESS}
+        ['FalsE']=${SUCCESS}
+        ['On']=${SUCCESS}
+        ['oFF']=${SUCCESS}
+        ['y']=${SUCCESS}
+        ['NO']=${SUCCESS}
+
+        ['9']=${FAILURE}
+        ['tru']=${FAILURE}
+        ['of']=${FAILURE}
+
+        [' ']=${FAILURE}
+        ['_EMPTY']=${FAILURE}
+    )
+
+    _run_tests "isBool" test_cases -e
+}
+
+
+function test_isTrue () {
+    # shellcheck disable=SC2034
+    declare -A test_cases=(
+        ['1']=${SUCCESS}
+        ['tRuE']=${SUCCESS}
+        ['t']=${SUCCESS}
+        ['On']=${SUCCESS}
+        ['yEs']=${SUCCESS}
+        ['y']=${SUCCESS}
+
+        ['tru']=${FAILURE}
+        ['0']=${FAILURE}
+        ['false']=${FAILURE}
+        ['off']=${FAILURE}
+        ['no']=${FAILURE}
+
+        [' ']=${FAILURE}
+        ['_EMPTY']=${FAILURE}
+    )
+
+    _run_tests "isTrue" test_cases -e
+}
+
+
+function test_isFalse () {
+    # shellcheck disable=SC2034
+    declare -A test_cases=(
+        ['0']=${SUCCESS}
+        ['false']=${SUCCESS}
+        ['f']=${SUCCESS}
+        ['Off']=${SUCCESS}
+        ['No']=${SUCCESS}
+        ['n']=${SUCCESS}
+
+        ['folse']=${FAILURE}
+        ['1']=${FAILURE}
+        ['true']=${FAILURE}
+        ['on']=${FAILURE}
+        ['Y']=${FAILURE}
+
+        [' ']=${FAILURE}
+        ['_EMPTY']=${FAILURE}
+    )
+
+    _run_tests "isFalse" test_cases -e
+}
+
+
+function test_set_log_level () {
+    # shellcheck disable=SC2034
+    declare -A test_cases=(
+        ['FATAL']="${_LOG_LEVELS[FATAL]}"
+        ['ERROR']="${_LOG_LEVELS[ERROR]}"
+        ['WARNING']="${_LOG_LEVELS[WARNING]}"
+        ['INFO']="${_LOG_LEVELS[INFO]}"
+        ['DEBUG']="${_LOG_LEVELS[DEBUG]}"
+
+        ['FATAL ERROR']="${_LOG_LEVELS[INFO]}"
+
+        [' ']="${_LOG_LEVELS[INFO]}"
+        ['_EMPTY']="${_LOG_LEVELS[INFO]}"
+    )
+
+    _run_tests "set_log_level" test_cases -v '_LOG_LEVEL'
+}
+
+
+function test_log () {
+    local log_functions=( "fatal" "error" "warning" "info" "debug" "enter" "leave" )
+
+    echo -ne "\n# TESTING 'log_*' functions:"
+    for log_level in "${!_LOG_LEVELS[@]}"; do
+        _LOG_LEVEL=${_LOG_LEVELS[${log_level}]}
+        printf '\n%-9s%s\n' "#######" "Setting log level to '${log_level}'..."
+        for case in "${log_functions[@]}"; do
+            # shellcheck disable=SC2086
+            log_${case} "Testing 'log_${case}'"
+        done
+    done
+
+    printf '\n%-9s%s\n' "#######" "Testing empty message:..."
+    _LOG_LEVEL=4
+    log_functions=( "fatal" "error" "warning" "info" "debug" )
+    for case in "${log_functions[@]}"; do
+        # shellcheck disable=SC2086
+        log_${case}
+    done
+
+    _LOG_LEVEL=3
+    return ${SUCCESS}
+}
+
+
+function test_print () {
+    local print_functions=( "info" "error" "warning" "success" "failure" "message" )
+
+    echo -e "\n# TESTING 'print_*' functions:"
+    for case in "${print_functions[@]}"; do
+        # shellcheck disable=SC2086
+        print_${case} "Testing 'print_${case}'"
+    done
+
+    printf '\n%-9s%s\n' "#######" "Testing empty message:..."
+    for case in "${print_functions[@]}"; do
+        # shellcheck disable=SC2086
+        print_${case}
+    done
+
+    return ${SUCCESS}
+}
+
+
+function test_log_if_error() {
+    declare -i  total_tests=3
+    declare -i  failures=0
+
+    echo -e "\n# TESTING 'log_if_error':"
+
+    _LOG_LEVEL=4
+
+    set +e
+    true
+    [[ -z "$( log_if_error "Successful command returned an error. Test failed" 2>&1 )" ]] || failures+=1
+
+    false
+    [[ -z "$( log_if_error "Unsuccessful command returned no error. Test passed" 2>&1 )" ]] && failures+=1
+
+    false
+    [[ -z "$( log_if_error 2>&1 )" ]] && failures+=1
+    set -e
+
+    printf '%-9s%s\n'    "PASSED:"  "$(( total_tests - failures ))"
+    printf '%-9s%s\n'    "FAILED:"  "${failures}"
+
+    if (( failures != 0 )); then
+        return ${FAILURE}
+    else
+        return ${SUCCESS}
+    fi
+}
+
+
+function test_exit_if_error() {
+    echo -e "\n# TESTING 'exit_if_error':"
+
+    _LOG_LEVEL=4
+    
+    set +e
+    true
+    exit_if_error "Successful command returned an error. Test failed" 2>&1 
+    print_success "Successfull command returned no error. Test passed"
+
+    false
+    exit_if_error "Unsuccessful command returned an error as expected. Test passed" 2>&1
+    set -e
+    print_failure "Unsuccessful command returned no error. Test failed"
+
+    return ${FAILURE}
+}
+
+
+function test_isBlank() {
+    # shellcheck disable=SC2034
+    declare -A test_cases=(
+        [$'\t']=${SUCCESS}
+        [$'   \t    ']=${SUCCESS}
+
+        ['--kjsklj']=${FAILURE}
+        [$'fs \t\t fsf \t yyye']=${FAILURE}
+
+        [' ']=${SUCCESS}
+        ['_EMPTY']=${SUCCESS}
+    )
+
+    _run_tests "isBlank" test_cases -e
+}
+
+
+function test_isValidKey() {
+    # shellcheck disable=SC2034
+    declare -A test_cases=(
+        ['-k']=${SUCCESS}
+        ['--key']=${SUCCESS}
+        ['--key']=${SUCCESS}
+        ['-1']=${SUCCESS}
+        ['--test-key']=${SUCCESS}
+        ['--test-key_1']=${SUCCESS}
+
+        ['-key']=${FAILURE}
+        ['-test_key-1']=${FAILURE}
+        ['test-key']=${FAILURE}
+        ['---test-key']=${FAILURE}
+        ['--_test-key']=${FAILURE}
+        ['--test key']=${FAILURE}
+        ['--test=key']=${FAILURE}
+        ['--test/key/1']=${FAILURE}
+        ['--*key']=${FAILURE}
+        ['--^(-|--)([[:alnum:]]+[-_[:alnum:]]*)$']=${FAILURE}
+        ['^(-|--)([[:alnum:]]+[-_[:alnum:]]*)$']=${FAILURE}
+        
+
+        [' ']=${FAILURE}
+        ['_EMPTY']=${FAILURE}
+    )
+
+    _run_tests "isValidKey" test_cases -e
+}
+
+
+function test_isValid() {
+    # shellcheck disable=SC2034
+    declare -A test_cases=(
+        ['" ", "-v", "^[^[:graph:]]*$"']=${SUCCESS}
+        ['"--key", "-v", "^(-|--)([[:alnum:]]+[-_[:alnum:]]*)$"']=${SUCCESS}
+        ['"156", "-v", "^([1-9]+[0-9]*)$"']=${SUCCESS}
+        ['"true", "-v", "^(true|t|false|f)$"']=${SUCCESS}
+        
+        ['" f ", "-v", "^[^[:graph:]]*$"']=${FAILURE}
+        ['"---key", "-v", "^(-|--)([[:alnum:]]+[-_[:alnum:]]*)$"']=${FAILURE}
+        ['"0156", "-v", "^([1-9]+[0-9]*)$"']=${FAILURE}
+        ['"false", "-v", "^(true|t)$"']=${FAILURE}
+        
+
+        [' ']=${SUCCESS}
+        ['_EMPTY']=${SUCCESS}
+    )
+
+    _run_tests "isValid" test_cases -e
+}
+
+
+#------------------------------------------------------------------------------
+# main
+#------------------------------------------------------------------------------
+
+test_isBool         || TEST_STATUS=${FAILURE}
+test_isTrue         || TEST_STATUS=${FAILURE}
+test_isFalse        || TEST_STATUS=${FAILURE}
+test_isBlank        || TEST_STATUS=${FAILURE}
+test_isValidKey     || TEST_STATUS=${FAILURE}
+test_isValid        || TEST_STATUS=${FAILURE}
+
+test_set_log_level  || TEST_STATUS=${FAILURE}
+test_log            || TEST_STATUS=${FAILURE}
+test_print          || TEST_STATUS=${FAILURE}
+test_log_if_error   || TEST_STATUS=${FAILURE}
+test_exit_if_error  || TEST_STATUS=${FAILURE}
+
+exit ${TEST_STATUS}
+
