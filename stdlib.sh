@@ -14,20 +14,20 @@ export LC_ALL="C.UTF-8"
 
 
 # Exit-codes:
-declare -xri SUCCESS=0
-declare -xri FAILURE=1
+declare -ri SUCCESS=0
+declare -ri FAILURE=1
 
 
 #------------------------------------------------------------------------------
 # Booleans
 #------------------------------------------------------------------------------
 
-declare -xri TRUE=1
-declare -xri FALSE=0
+declare -ri TRUE=1
+declare -ri FALSE=0
 
 
 function isBool() {
-    declare value="${1:-}"
+    local value="${1:-}"
 
     [[ "${value}" == "${TRUE}" || "${value}" == "${FALSE}" ]] && return ${SUCCESS}
 
@@ -44,7 +44,7 @@ function isBool() {
 
 
 function isTrue() {
-    declare value="${1:-}"
+    local value="${1:-}"
 
     isBool "${value}" || return ${FAILURE}
 
@@ -83,11 +83,11 @@ function _print_log() {
     # Usage: _print_log LOG_LEVEL [MESSAGE]
     # private log-printing function, not for regular usage!
 
-    declare -r s_message_level="${1:-"ERROR"}"; shift
-    declare -r message="${*:-"EMPTY MESSAGE"}"
+    local -r s_message_level="${1:-"ERROR"}"; shift
+    local -r message="${*:-"EMPTY MESSAGE"}"
 
-    declare -ri i_message_level="${_LOG_LEVELS["${s_message_level}"]:-1}"
-    declare -ri log_level="${_LOG_LEVEL:-3}"
+    local -ri i_message_level="${_LOG_LEVELS["${s_message_level}"]:-1}"
+    local -ri log_level="${_LOG_LEVEL:-3}"
     
     if [[ ${i_message_level} -le ${log_level} ]]; then
         printf '%-9s%s' "${s_message_level}" "${BASH_SOURCE[2]:-}:${BASH_LINENO[1]:-}  "
@@ -109,8 +109,8 @@ function log_leave()   { _print_log 'DEBUG'   "Leaving  function '${FUNCNAME[1]:
 
 function set_log_level() {
     # Usage: set_log_level [FATAL|ERROR|WARNING|INFO|DEBUG]
-    declare -r s_level="${1:-"INFO"}"
-    declare    i_level="${_LOG_LEVELS["${s_level}"]:-}"
+    local -r s_level="${1:-"INFO"}"
+    local    i_level="${_LOG_LEVELS["${s_level}"]:-}"
 
     [[ -z "${i_level}" ]] && {
         log_warning "Unknown log level '$s_level'. Setting to 'INFO'"
@@ -131,10 +131,10 @@ function _print() {
     # Usage: _print MESSAGE_TYPE [-b|-c 'COLOR'] [MESSAGE]
     # private message-printing function, not for regular use!
 
-    declare    color_on=''
-    declare -r color_off='\033[0m'
+    local    color_on=''
+    local -r color_off='\033[0m'
 
-    declare -r message_type=${1:-"ERROR"}; shift
+    local -r message_type=${1:-"ERROR"}; shift
 
     if [[ "${1:-}" == '-b' ]]; then
         color_on='\033[1m'
@@ -144,7 +144,7 @@ function _print() {
         shift 2
     fi
 
-    declare -r message="${*:-"EMPTY MESSAGE"}"
+    local -r message="${*:-"EMPTY MESSAGE"}"
 
     [[ -n "${color_on}" ]] && printf "${color_on}" 
     printf '%-9s%s\n' "${message_type}" "${message}"
@@ -170,8 +170,8 @@ function log_if_error() {
     # print a message and returns an exit code of the previous command
     # Usage: log_if_error [ERROR MESSAGE]
     
-    declare -ri last_exit_code=${?:-1}    
-    declare -r  message="${*:-"SOMETHING WRONG"}"
+    local -ri last_exit_code=${?:-1}    
+    local -r  message="${*:-"SOMETHING WRONG"}"
     
     [[ ${last_exit_code} -ne 0 ]] && log_error "${message}"
     
@@ -183,8 +183,8 @@ function exit_if_error() {
     # print a message and exit
     # Usage: exit_if_error [EXIT MESSAGE]
     
-    declare -ri last_exit_code=${?:-1}    
-    declare -r  message="${*:-"SOMETHING WRONG"}"
+    local -ri last_exit_code=${?:-1}    
+    local -r  message="${*:-"SOMETHING WRONG"}"
     
     if [[ ${last_exit_code} -ne 0 ]]; then
         _print_log 'FATAL' "${message}"
@@ -201,8 +201,8 @@ function exit_if_error() {
 function isValid() {
     # Usage: isValid VALUE [-v 'VALIDATOR']
     
-    declare -r value="${1:-}"
-    declare -r pattern="${3:-"^[[:graph:][:blank:]]*$"}"
+    local -r value="${1:-}"
+    local -r pattern="${3:-"^[[:graph:][:blank:]]*$"}"
 
     if [[ $# -eq 2 || ( $# -eq 3 && "${2:-}" != '-v' ) ]]; then
         log_error "$( echo -e "Wrong input: '$*'.\nUsage: isValid VALUE [-v 'VALIDATOR']" )"
@@ -231,13 +231,13 @@ function isEmpty()      { [[ -z "${1:-}" ]]; }
 function isValidKey()   { isValid "${1:-}" -v '^(-[[:alnum:]]|--[[:alnum:]]+[-_[:alnum:]]*)$'; }
 
 function read_options() {
-    declare -n options="${1:-}"; shift
-    declare -A -p options &> /dev/null || {
+    local -n options="${1:-}"; shift
+    local -A -p options &> /dev/null || {
         log_fatal "WRONG INPUT. Usage: ${FUNCNAME[0]} OPTIONS [ INPUT ARGS ]"
         return ${FAILURE}
     }
 
-    declare -i status=SUCCESS
+    local -i status=SUCCESS
     local key value
 
     while [[ $# -gt 0 ]]; do
@@ -267,15 +267,15 @@ function read_options() {
 
 function validate_options() {
     # shellcheck disable=SC2178
-    declare -n options="${1:-}"
-    declare validation_function="${2:-}"
-    if ! declare -A -p options &> /dev/null || \
+    local -n options="${1:-}"
+    local validation_function="${2:-}"
+    if ! local -A -p options &> /dev/null || \
         [[ "$( type -t "${validation_function}" )" != "function" ]]; then
         log_fatal "WRONG INPUT. Usage: ${FUNCNAME[0]} OPTIONS VALIDATOR"
         return ${FAILURE}
     fi
 
-    declare -i status=SUCCESS
+    local -i status=SUCCESS
     
     local value
     for key in "${!options[@]}"; do
