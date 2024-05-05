@@ -1,1 +1,4 @@
 .vscode
+
+/tests/test_dotenv
+/tests/test.env

@@ -4,6 +4,8 @@
 # Initialization
 #------------------------------------------------------------------------------
 
+[[ -n "${__stdlib_sourced:+'True'}" ]] && return 0
+
 # Setting the 'strict' mode on by default
 # Disable some of the options if it is really neccessary
 set -euo pipefail
@@ -287,3 +289,6 @@ function validate_options() {
 
     return ${status}
 }
+
+
+__stdlib_sourced="${TRUE}"
