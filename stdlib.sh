@@ -92,7 +92,8 @@ function _print_log() {
     local -ri log_level="${_LOG_LEVEL:-3}"
     
     if [[ ${i_message_level} -le ${log_level} ]]; then
-        printf '%-9s%s' "${s_message_level}" "${BASH_SOURCE[2]:-}:${BASH_LINENO[1]:-}  "
+        local -r caller="$( realpath -esq --relative-to="${PWD}" "${BASH_SOURCE[2]:-.}" 2>/dev/null )"
+        printf '%-9s%s' "${s_message_level}" "${caller}:${BASH_LINENO[1]:-}  "
         printf '%s\n' "${message}"
     fi
 
